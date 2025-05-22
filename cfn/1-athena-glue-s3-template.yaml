@@ -5,7 +5,7 @@ Description: >
 Parameters:
   AthenaDatabaseName:
     Type: String
-    Default: 'athena_db'
+    Default: 'newathena_db'
   Alias:
     Type: String
     Default: '{ENTER ALIAS}'
