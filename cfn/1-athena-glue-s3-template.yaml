@@ -233,8 +233,7 @@ Resources:
                   bucket = os.environ.get('S3BucketName')
                   
                   urls = {
-                      "customers/mock-data-customers.csv": "https://github.com/build-on-aws/bedrock-agent-txt2sql/raw/main/S3data/mock-data-customers.csv",
-                      "procedures/mock-data-procedures.csv": "https://github.com/build-on-aws/bedrock-agent-txt2sql/raw/main/S3data/mock-data-procedures.csv"
+                      "health.csv": "https://github.com/neomartinez30/bedrock-agent-txt2sql/raw/main/S3data/health.csv"
                   }
                   
                   http = urllib3.PoolManager()
@@ -275,7 +274,7 @@ Resources:
         S3Targets:
           - Path: !Join ['', ['s3://', !Ref S3Bucket, '/customers/']]
       TablePrefix: 'customers_'
-  
+
   GlueCrawlerProcedures:
     Type: 'AWS::Glue::Crawler'
     DependsOn: CopyDataCustomResource
@@ -287,6 +286,18 @@ Resources:
         S3Targets:
           - Path: !Join ['', ['s3://', !Ref S3Bucket, '/procedures/']]
       TablePrefix: 'procedures_'
+
+  GlueCrawlerHealth:
+    Type: 'AWS::Glue::Crawler'
+    DependsOn: CopyDataCustomResource
+    Properties:
+      DatabaseName: !Ref AthenaDatabaseName
+      Name: !Sub "${AthenaDatabaseName}-crawler-health"
+      Role: !GetAtt GlueServiceRole.Arn
+      Targets:
+        S3Targets:
+          - Path: !Join ['', ['s3://', !Ref S3Bucket, '/']]
+      TablePrefix: 'health_'
 
   GlueTableCustomers:
     Type: 'AWS::Glue::Table'
@@ -301,7 +312,7 @@ Resources:
           Columns: 
             - Name: 'Cust_Id'
               Type: 'int'
-            - Name: 'Customer'
+            - Name: 'Customer_Name'
               Type: 'string'
             - Name: 'Balance'
               Type: 'int'
@@ -335,7 +346,7 @@ Resources:
           Columns: 
             - Name: 'Procedure_Id'
               Type: 'string'
-            - Name: 'Procedure'
+            - Name: 'Procedure_Name'
               Type: 'string'
             - Name: 'Category'
               Type: 'string'
@@ -343,7 +354,7 @@ Resources:
               Type: 'int'
             - Name: 'Duration'
               Type: 'int'
-            - Name: 'Insurance'
+            - Name: 'Insurance_Covered'
               Type: 'string'
             - Name: 'Customer_Id'
               Type: 'int'
@@ -358,6 +369,58 @@ Resources:
             'classification': 'csv'
         TableType: 'EXTERNAL_TABLE'
         Parameters: 
+          'EXTERNAL': 'TRUE'
+  
+  GlueTableHealth:
+    Type: 'AWS::Glue::Table'
+    DependsOn: GlueCrawlerHealth
+    Properties:
+      CatalogId: !Ref 'AWS::AccountId'
+      DatabaseName: !Ref AthenaDatabaseName
+      TableInput:
+        Name: 'health'
+        Description: 'Health table'
+        StorageDescriptor:
+          Columns:
+            - Name: 'name'
+              Type: 'string'
+            - Name: 'age'
+              Type: 'int'
+            - Name: 'gender'
+              Type: 'string'
+            - Name: 'blood_type'
+              Type: 'string'
+            - Name: 'medical_condition'
+              Type: 'string'
+            - Name: 'date_of_admission'
+              Type: 'string'
+            - Name: 'doctor'
+              Type: 'string'
+            - Name: 'hospital'
+              Type: 'string'
+            - Name: 'billing_amount'
+              Type: 'double'
+            - Name: 'room_number'
+              Type: 'string'
+            - Name: 'admission_type'
+              Type: 'string'
+            - Name: 'discharge_date'
+              Type: 'string'
+            - Name: 'medication'
+              Type: 'string'
+            - Name: 'test_results'
+              Type: 'string'
+          Location: !Join ['', ['s3://', !Ref S3Bucket, '/health.csv']]
+          InputFormat: 'org.apache.hadoop.mapred.TextInputFormat'
+          OutputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
+          SerdeInfo:
+            SerializationLibrary: 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
+            Parameters:
+              'field.delim': ','
+          Parameters:
+            'classification': 'csv'
+        TableType: 'EXTERNAL_TABLE'
+        Parameters:
           'EXTERNAL': 'TRUE'
   
 Outputs:

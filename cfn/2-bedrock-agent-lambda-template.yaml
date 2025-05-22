@@ -109,8 +109,8 @@ Resources:
 
               def athena_query_handler(event):
                   try:
-                      # Extracting the SQL query
-                      query = event['requestBody']['content']['application/json']['properties'][0]['value']
+                      # Extracting the SQL query from the OpenAPI-compliant request
+                      query = event['requestBody']['query']
                       logger.info(f"Executing query: {query}")
 
                       s3_output = os.environ.get('S3Output')
@@ -155,10 +155,26 @@ Resources:
                           sleep(1)  # Polling interval
 
                       if status == 'SUCCEEDED':
-                          return athena_client.get_query_results(QueryExecutionId=execution_id)
+                          raw_result = athena_client.get_query_results(QueryExecutionId=execution_id)
+                          # Format Athena results to match OpenAPI schema
+                          columns = [col['Label'] for col in raw_result['ResultSet']['ResultSetMetadata']['ColumnInfo']]
+                          rows = raw_result['ResultSet']['Rows'][1:]  # skip header row
+                          result_set = []
+                          for row in rows:
+                              values = [field.get('VarCharValue', None) for field in row['Data']]
+                              formatted = {}
+                              for col, val in zip(columns, values):
+                                  if col == 'age' and val is not None:
+                                      formatted[col] = int(val)
+                                  elif col == 'billing_amount' and val is not None:
+                                      formatted[col] = float(val)
+                                  else:
+                                      formatted[col] = val
+                              result_set.append(formatted)
+                          return {'ResultSet': result_set}
                       else:
                           logger.error(f"Query failed with status '{status}'")
-                          raise Exception(f"Query failed with status '{status}'")
+                          return {'error': f"Query failed with status '{status}'"}
                   except Exception as e:
                       logger.error(f"Failed to get query results: {str(e)}")
                       raise
@@ -262,14 +278,14 @@ Resources:
                             "schema": {
                               "type": "object",
                               "properties": {
-                                "Procedure ID": {
+                                "name": {
                                   "type": "string",
-                                  "description": "Unique identifier for the procedure",
+                                  "description": "Name / Unique identifier for the procedure",
                                   "nullable": true
                                 },
-                                "Query": {
+                                "query": {
                                   "type": "string",
-                                  "description": "SQL Query"
+                                  "description": "SQL query"
                                 }
                               }
                             }
@@ -348,31 +364,25 @@ Resources:
 
               <athena_schemas>
                 <athena_schema> 
-                CREATE EXTERNAL TABLE athena_db.customers ( 
-                `Cust_Id` integer, 
-                `Customer` string, 
-                `Balance` integer, 
-                `Past_Due` integer, 
-                `Vip` string ) 
+                CREATE EXTERNAL TABLE athena_db.health ( 
+                `name` string, 
+                `age` integer, 
+                `gender` string, 
+                `blood_type` string, 
+                `medical_condition` string, 
+                `date_of_admission` string, 
+                `doctor` string, 
+                `hospital` string, 
+                `billing_amount` double, 
+                `room_number` string, 
+                `admission_type` string, 
+                `discharge_date` string, 
+                `medication` string, 
+                `test_results` string ) 
                 ROW FORMAT DELIMITED 
                 FIELDS TERMINATED BY ',' 
                 LINES TERMINATED BY '\n' 
-                STORED AS TEXTFILE LOCATION 's3://sl-athena-output-alias/'; 
-                </athena_schema>
-
-                <athena_schema> 
-                CREATE EXTERNAL TABLE athena_db.procedures ( 
-                `Procedure_ID` string, 
-                `Procedure` string, 
-                `Category` string, 
-                `Price` integer, 
-                `Duration` integer, 
-                `Insurance` string, 
-                `Customer_Id` integer ) 
-                ROW FORMAT DELIMITED 
-                FIELDS TERMINATED BY ',' 
-                LINES TERMINATED BY '\n' 
-                STORED AS TEXTFILE LOCATION 's3://sl-athena-output-alias/'; 
+                STORED AS TEXTFILE LOCATION 's3://athena-destination-store-neoathome/'; 
                 </athena_schema>
               </athena_schemas>
 
@@ -380,7 +390,7 @@ Resources:
 
               <athena_examples>
                 <athena_example> 
-                SELECT * FROM athena_db.procedures WHERE insurance = 'yes' OR insurance_covered = 'no'; 
+                SELECT * FROM athena_db.procedures WHERE insurance_covered = 'yes' OR insurance_covered = 'no'; 
                 </athena_example>
 
                 <athena_example> 

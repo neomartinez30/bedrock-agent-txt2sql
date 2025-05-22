@@ -8,19 +8,12 @@ def lambda_handler(event, context):
     print(event)
 
     def athena_query_handler(event):
-        # Fetch parameters for the new fields
-
-        # Extracting the SQL query
-        query = event['requestBody']['content']['application/json']['properties'][0]['value']
-
+        # Extracting the SQL query from the OpenAPI-compliant request
+        query = event['requestBody']['query']
         print("the received QUERY:",  query)
-        
-        s3_output = 's3://athena-destination-store-alias'  # Replace with your S3 bucket
-
-        # Execute the query and wait for completion
+        s3_output = 's3://athena-destination-store-neoathome/'  # Replace with your S3 bucket
         execution_id = execute_athena_query(query, s3_output)
         result = get_query_results(execution_id)
-
         return result
 
     def execute_athena_query(query, s3_output):
@@ -42,9 +35,26 @@ def lambda_handler(event, context):
             sleep(1)  # Polling interval
 
         if status == 'SUCCEEDED':
-            return athena_client.get_query_results(QueryExecutionId=execution_id)
+            raw_result = athena_client.get_query_results(QueryExecutionId=execution_id)
+            # Format Athena results to match OpenAPI schema
+            columns = [col['Label'] for col in raw_result['ResultSet']['ResultSetMetadata']['ColumnInfo']]
+            rows = raw_result['ResultSet']['Rows'][1:]  # skip header row
+            result_set = []
+            for row in rows:
+                values = [field.get('VarCharValue', None) for field in row['Data']]
+                # Convert types for known columns
+                formatted = {}
+                for col, val in zip(columns, values):
+                    if col == 'age' and val is not None:
+                        formatted[col] = int(val)
+                    elif col == 'billing_amount' and val is not None:
+                        formatted[col] = float(val)
+                    else:
+                        formatted[col] = val
+                result_set.append(formatted)
+            return {'ResultSet': result_set}
         else:
-            raise Exception(f"Query failed with status '{status}'")
+            return {'error': f"Query failed with status '{status}'"}
 
     action_group = event.get('actionGroup')
     api_path = event.get('apiPath')
