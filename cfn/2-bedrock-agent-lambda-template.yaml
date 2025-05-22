@@ -364,7 +364,7 @@ Resources:
 
               <athena_schemas>
                 <athena_schema> 
-                CREATE EXTERNAL TABLE athena_db.health ( 
+                CREATE EXTERNAL TABLE newathena_db.health ( 
                 `name` string, 
                 `age` integer, 
                 `gender` string, 
@@ -390,11 +390,11 @@ Resources:
 
               <athena_examples>
                 <athena_example> 
-                SELECT * FROM athena_db.procedures WHERE insurance_covered = 'yes' OR insurance_covered = 'no'; 
+                SELECT * FROM newathena_db.procedures WHERE insurance_covered = 'yes' OR insurance_covered = 'no'; 
                 </athena_example>
 
                 <athena_example> 
-                SELECT * FROM athena_db.customers WHERE balance >= 0; 
+                SELECT * FROM newathena_db.customers WHERE balance >= 0; 
                 </athena_example>
               </athena_examples>
 
@@ -453,3 +453,4 @@ Outputs:
   AthenaQueryLambdaArn:
     Description: 'ARN of the Athena Query Lambda function'
     Value: !GetAtt AthenaQueryLambda.Arn
+

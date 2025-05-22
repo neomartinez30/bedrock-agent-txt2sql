@@ -233,7 +233,7 @@ Resources:
                   bucket = os.environ.get('S3BucketName')
                   
                   urls = {
-                      "health.csv": "https://github.com/neomartinez30/bedrock-agent-txt2sql/raw/main/S3data/health.csv"
+                      "health.csv": "https://github.com/neomartinez30/bedrock-agent-txt2sql/raw/main/S3data/health/"
                   }
                   
                   http = urllib3.PoolManager()
