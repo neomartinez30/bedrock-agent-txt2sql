@@ -262,30 +262,6 @@ Resources:
     Properties:
       ServiceToken: !GetAtt CopyDataLambda.Arn
       S3BucketName: !Ref S3Bucket
-  
-  GlueCrawlerCustomers:
-    Type: 'AWS::Glue::Crawler'
-    DependsOn: CopyDataCustomResource
-    Properties:
-      DatabaseName: !Ref AthenaDatabaseName
-      Name: !Sub "${AthenaDatabaseName}-crawler-customers"
-      Role: !GetAtt GlueServiceRole.Arn
-      Targets:
-        S3Targets:
-          - Path: !Join ['', ['s3://', !Ref S3Bucket, '/customers/']]
-      TablePrefix: 'customers_'
-
-  GlueCrawlerProcedures:
-    Type: 'AWS::Glue::Crawler'
-    DependsOn: CopyDataCustomResource
-    Properties:
-      DatabaseName: !Ref AthenaDatabaseName
-      Name: !Sub "${AthenaDatabaseName}-crawler-procedures"
-      Role: !GetAtt GlueServiceRole.Arn
-      Targets:
-        S3Targets:
-          - Path: !Join ['', ['s3://', !Ref S3Bucket, '/procedures/']]
-      TablePrefix: 'procedures_'
 
   GlueCrawlerHealth:
     Type: 'AWS::Glue::Crawler'
@@ -299,78 +275,6 @@ Resources:
           - Path: !Join ['', ['s3://', !Ref S3Bucket, '/']]
       TablePrefix: 'health_'
 
-  GlueTableCustomers:
-    Type: 'AWS::Glue::Table'
-    DependsOn: GlueCrawlerCustomers
-    Properties: 
-      CatalogId: !Ref 'AWS::AccountId'
-      DatabaseName: !Ref AthenaDatabaseName
-      TableInput: 
-        Name: 'customers'
-        Description: 'Customers table'
-        StorageDescriptor: 
-          Columns: 
-            - Name: 'Cust_Id'
-              Type: 'int'
-            - Name: 'Customer_Name'
-              Type: 'string'
-            - Name: 'Balance'
-              Type: 'int'
-            - Name: 'Past_Due'
-              Type: 'int'
-            - Name: 'Vip'
-              Type: 'string'
-          Location: !Join ['', ['s3://', !Ref S3Bucket, '/customers/']]
-          InputFormat: 'org.apache.hadoop.mapred.TextInputFormat'
-          OutputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-          SerdeInfo: 
-            SerializationLibrary: 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
-            Parameters: 
-              'field.delim': ','
-          Parameters: 
-            'classification': 'csv'
-        TableType: 'EXTERNAL_TABLE'
-        Parameters: 
-          'EXTERNAL': 'TRUE'
-  
-  GlueTableProcedures:
-    Type: 'AWS::Glue::Table'
-    DependsOn: GlueCrawlerProcedures
-    Properties: 
-      CatalogId: !Ref 'AWS::AccountId'
-      DatabaseName: !Ref AthenaDatabaseName
-      TableInput: 
-        Name: 'procedures'
-        Description: 'Procedures table'
-        StorageDescriptor: 
-          Columns: 
-            - Name: 'Procedure_Id'
-              Type: 'string'
-            - Name: 'Procedure_Name'
-              Type: 'string'
-            - Name: 'Category'
-              Type: 'string'
-            - Name: 'Price'
-              Type: 'int'
-            - Name: 'Duration'
-              Type: 'int'
-            - Name: 'Insurance_Covered'
-              Type: 'string'
-            - Name: 'Customer_Id'
-              Type: 'int'
-          Location: !Join ['', ['s3://', !Ref S3Bucket, '/procedures/']]
-          InputFormat: 'org.apache.hadoop.mapred.TextInputFormat'
-          OutputFormat: 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat'
-          SerdeInfo: 
-            SerializationLibrary: 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'
-            Parameters: 
-              'field.delim': ','
-          Parameters: 
-            'classification': 'csv'
-        TableType: 'EXTERNAL_TABLE'
-        Parameters: 
-          'EXTERNAL': 'TRUE'
-  
   GlueTableHealth:
     Type: 'AWS::Glue::Table'
     DependsOn: GlueCrawlerHealth

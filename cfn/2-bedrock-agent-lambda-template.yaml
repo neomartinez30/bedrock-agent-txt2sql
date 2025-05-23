@@ -224,6 +224,56 @@ Resources:
       Principal: 'bedrock.amazonaws.com'
       SourceArn: !Sub 'arn:aws:bedrock:${AWS::Region}:${AWS::AccountId}:agent/*'
 
+  FDADrugLookupLambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  FDADrugLookupLambda:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub 'FDADrugLookupLambda-${AWS::AccountId}'
+      Handler: index.lambda_handler
+      Role: !GetAtt FDADrugLookupLAthenaQueryLambdaExecutionRole.Arn
+      Runtime: python3.12
+      MemorySize: 512
+      Timeout: 30
+      Code:
+        ZipFile: |
+          import json
+          import requests
+
+          def lambda_handler(event, context):
+              try:
+                  drug_name = event.get('drug_name') or event.get('requestBody', {}).get('drug_name')
+                  if not drug_name:
+                      return {"error": "Missing required parameter: drug_name"}
+                  url = f"https://api.fda.gov/drug/label.json?search=openfda.brand_name:{drug_name}&limit=1"
+                  response = requests.get(url)
+                  response.raise_for_status()
+                  data = response.json()
+                  results = data.get("results", [])
+                  if not results:
+                      return {"result": f"No information found for drug: {drug_name}"}
+                  drug_info = results[0]
+                  indications = drug_info.get("indications_and_usage", ["No indications listed."])[0]
+                  warnings = drug_info.get("warnings", ["No warnings listed."])[0]
+                  return {
+                      "result": f"Indications and Usage: {indications}\n\nWarnings: {warnings}"
+                  }
+              except requests.exceptions.RequestException as e:
+                  return {"error": f"API request failed: {str(e)}"}
+              except Exception as e:
+                  return {"error": f"Error processing API response: {str(e)}"}
+
   BedrockAgent:
     Type: "AWS::Bedrock::Agent"
     DependsOn: LambdaInvokePermission
@@ -233,28 +283,32 @@ Resources:
       AutoPrepare: 'True'
       FoundationModel: !Ref FoundationModel
       Instruction: |
-        You are a SQL analyst that creates queries for Amazon Athena. Your primary objective is to pull data from the Athena database based on the table schemas and user request, then respond. You also return the SQL query created.
+        You are a SQL analyst that creates queries for Amazon Athena and can also look up drug information from the FDA public database. Your primary objective is to pull data from the Athena database based on the table schemas and user request, reference drug information as needed, and respond. You also return the SQL query created and any drug information found.
 
         1. Query Decomposition and Understanding:
            - Analyze the user's request to understand the main objective.
-           - Break down requests into sub-queries that can each address a part of the user's request, using the schema provided.
+           - Break down requests into sub-queries that can each address a part of the user's request, using the schema provided and the FDA drug lookup tool.
 
         2. SQL Query Creation:
            - For each sub-query, use the relevant tables and fields from the provided schema.
            - All strings in queries created will remain in lowercase.
            - Construct SQL queries that are precise and tailored to retrieve the exact data required by the user’s request.
 
-        3. Query Execution and Response:
+        3. Drug Lookup:
+           - Use the FDA drug lookup tool to retrieve drug information as needed to answer the user's question.
+
+        4. Query Execution and Response:
            - Execute the constructed SQL queries against the Amazon Athena database.
-           - Return the results exactly as they are fetched from the database, ensuring data integrity and accuracy. 
+           - Return the results exactly as they are fetched from the database, ensuring data integrity and accuracy.
+           - Return drug information from the FDA lookup as needed.
            
-        Include the query generated and results in the response.
+        Include the query generated, results, and any drug information in the response.
 
       Description: "Uses Amazon Athena with S3 data source that has .csv files of customer and procedure data"
       IdleSessionTTLInSeconds: 900
       ActionGroups:
         - ActionGroupName: "query-athena"
-          Description: "This action group is used to query information about customers and procedures"
+          Description: "This action group is used to query information about patients, customers, and procedures"
           ActionGroupExecutor:
             Lambda: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:AthenaQueryLambda-${AWS::AccountId}'
           ApiSchema:
@@ -321,6 +375,78 @@ Resources:
                                 "type": "object",
                                 "properties": {
                                   "message": {
+                                    "type": "string"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+        - ActionGroupName: "lookup-fda-drug"
+          Description: "This action group is used to look up drug information from the FDA public database."
+          ActionGroupExecutor:
+            Lambda: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:FDADrugLookupLambda-${AWS::AccountId}'
+          ApiSchema:
+            Payload: |
+              {
+                "openapi": "3.0.1",
+                "info": {
+                  "title": "FDADrugLookup API",
+                  "description": "API for looking up drug information from the FDA public database",
+                  "version": "1.0.0"
+                },
+                "paths": {
+                  "/lookupDrugInfo": {
+                    "post": {
+                      "description": "Look up drug information from the FDA public database",
+                      "requestBody": {
+                        "description": "Drug lookup details",
+                        "required": true,
+                        "content": {
+                          "application/json": {
+                            "schema": {
+                              "type": "object",
+                              "properties": {
+                                "drug_name": {
+                                  "type": "string",
+                                  "description": "Name of the drug to look up"
+                                }
+                              },
+                              "required": ["drug_name"]
+                            }
+                          }
+                        }
+                      },
+                      "responses": {
+                        "200": {
+                          "description": "Successful response with drug information",
+                          "content": {
+                            "application/json": {
+                              "schema": {
+                                "type": "object",
+                                "properties": {
+                                  "result": {
+                                    "type": "string",
+                                    "description": "Drug information from the FDA database"
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        },
+                        "default": {
+                          "description": "Error response",
+                          "content": {
+                            "application/json": {
+                              "schema": {
+                                "type": "object",
+                                "properties": {
+                                  "error": {
                                     "type": "string"
                                   }
                                 }
@@ -423,7 +549,7 @@ Resources:
                     },
                     {
                         "role": "assistant",
-                        "content": "$agent_scratchpad$"
+                        "content":"$agent_scratchpad$"
                     }
                 ]
               }
